@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      # dist/ はコミットして配布する（npx github: で install script なしに実行するため）。
+      # ソースと食い違っていたら落とす。テストはビルド済みの dist も起動して確認する
+      - run: npm run check-dist
+      - run: npm test
+
+  # 実行時の最低バージョン（engines: node >=20）で dist が起動することだけ確認する（vitest は Node 22 以上が必要）
+  smoke-node20:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - run: npm ci --ignore-scripts --omit=dev
+      # 環境変数なしでは案内を出して exit 1 する
+      - run: |
+          set +e
+          out=$(node dist/index.js 2>&1); code=$?
+          set -e
+          echo "$out"
+          test "$code" -eq 1
+          echo "$out" | grep -q SPHERE_API_URL

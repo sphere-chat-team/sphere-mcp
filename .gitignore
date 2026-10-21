@@ -1,0 +1,8 @@
+node_modules/
+coverage/
+*.log
+.DS_Store
+# ローカル検証用の環境変数（トークンを含む）はコミットしない
+.env
+.env.*
+# dist/ はコミットする（npx github: で install script なしに実行するため）
