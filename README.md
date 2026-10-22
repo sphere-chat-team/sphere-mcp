@@ -9,7 +9,7 @@ Sphere の設定画面で発行した個人用 API トークンで、自分の�
 
 ## 必要なもの
 
-- Node.js 20 以上
+- Node.js 22 以上（Node 20 は 2026-04 に EOL）。2026-10-21 のセキュリティリリース以降の版（22.23.4 以上、または 24.22.1 以上）を使ってください
 - Sphere の個人用 API トークン（`sph_` で始まる 47 文字）
 - Sphere の API の URL（管理者から案内されたもの。Web 版の設定値 `API_ENDPOINT_BASE_URL` と同じで、末尾の `/api` は付けても付けなくても構いません）
 - このリポジトリ（private）への読み取りアクセス。`npx github:` は GitHub の認証情報（`gh auth login` か SSH 鍵）で clone します。npm に公開した後は不要になります
