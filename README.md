@@ -27,16 +27,25 @@ Sphere の設定 > 「API トークン」で発行します。
 
 ### 2. Claude Code に登録する
 
-トークンをコマンドラインに直接書くとシェルの履歴に残ります。環境変数に入れてから登録してください。
+トークンをコマンドラインに直接書くとシェルの履歴に残ります。次のブロックを丸ごとターミナル（macOS / Linux の bash・zsh）に貼り付けて実行し、`Sphere API token:` と表示されたらトークンを貼り付けて Enter を押してください（画面には出ません）。
 
 ```bash
-read -s SPHERE_API_TOKEN && export SPHERE_API_TOKEN   # 貼り付けて Enter（画面には出ません）
-
-claude mcp add sphere \
-  -e SPHERE_API_URL=https://<Sphere の API のホスト> \
-  -e SPHERE_API_TOKEN="$SPHERE_API_TOKEN" \
-  -- npx -y github:sphere-chat-team/sphere-mcp#6ea7c9bebe8f69b773b697123c8d1b9dde782c23
+{
+  SPHERE_API_TOKEN=
+  while [ -z "$SPHERE_API_TOKEN" ]; do
+    printf 'Sphere API token: ' >&2
+    read -rs SPHERE_API_TOKEN || break
+    echo >&2
+  done
+  [ -n "$SPHERE_API_TOKEN" ] && claude mcp add sphere \
+    -e SPHERE_API_URL=https://<Sphere の API のホスト> \
+    -e SPHERE_API_TOKEN="$SPHERE_API_TOKEN" \
+    -- npx -y github:sphere-chat-team/sphere-mcp#6ea7c9bebe8f69b773b697123c8d1b9dde782c23
+  unset SPHERE_API_TOKEN
+}
 ```
+
+- 全体を `{ ... }` で囲んでいるのは、bracketed paste の無いシェル（macOS 標準の bash 3.2 など）に複数行を貼っても、`read` が 2 行目以降をトークンとして読まないようにするためです。空のまま Enter を押すと聞き直します（空トークンで登録されるのを防ぐ）。`export` はせず、登録後に `unset` するので端末にトークンは残りません。PowerShell / fish では動きません
 
 - 必ず `github:sphere-chat-team/sphere-mcp#<コミット SHA>` の形で指定してください（タグは付け替えられるため SHA で固定します。上の SHA は v0.1.0 のコミットです）。`npx sphere-mcp` のような npm の名前指定は使わないでください（同名の無関係なパッケージが動く可能性があります）
 - `-s project` で登録しない（`.mcp.json` にトークンが平文で入り、リポジトリにコミットされ得ます）。チーム共有の `.mcp.json` に書く場合は値を `${SPHERE_API_TOKEN}` にして、各自の環境変数から展開してください
