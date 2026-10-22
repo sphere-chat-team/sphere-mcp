@@ -35,15 +35,15 @@ read -s SPHERE_API_TOKEN && export SPHERE_API_TOKEN   # 貼り付けて Enter（
 claude mcp add sphere \
   -e SPHERE_API_URL=https://<Sphere の API のホスト> \
   -e SPHERE_API_TOKEN="$SPHERE_API_TOKEN" \
-  -- npx -y github:sphere-chat-team/sphere-mcp#v0.1.0
+  -- npx -y github:sphere-chat-team/sphere-mcp#6ea7c9bebe8f69b773b697123c8d1b9dde782c23
 ```
 
-- 必ず `github:sphere-chat-team/sphere-mcp#<タグ>` の形で指定してください。`npx sphere-mcp` のような npm の名前指定は使わないでください（同名の無関係なパッケージが動く可能性があります）
+- 必ず `github:sphere-chat-team/sphere-mcp#<コミット SHA>` の形で指定してください（タグは付け替えられるため SHA で固定します。上の SHA は v0.1.0 のコミットです）。`npx sphere-mcp` のような npm の名前指定は使わないでください（同名の無関係なパッケージが動く可能性があります）
 - `-s project` で登録しない（`.mcp.json` にトークンが平文で入り、リポジトリにコミットされ得ます）。チーム共有の `.mcp.json` に書く場合は値を `${SPHERE_API_TOKEN}` にして、各自の環境変数から展開してください
 
 登録後、Claude Code で `/mcp` を開き `sphere` が接続済みになっていれば完了です。接続時に `[sphere-mcp] 接続しました: <API の URL> / <ユーザー名> / トークン「<名前>」（送信: 可, DM: 含む）` と stderr に出ます。
 
-Claude Desktop など他の MCP クライアントでは、`command: npx`、`args: ["-y", "github:sphere-chat-team/sphere-mcp#v0.1.0"]`、`env` に同じ 2 つを設定してください。
+Claude Desktop など他の MCP クライアントでは、`command: npx`、`args: ["-y", "github:sphere-chat-team/sphere-mcp#6ea7c9bebe8f69b773b697123c8d1b9dde782c23"]`、`env` に同じ 2 つを設定してください。
 
 ### 3. 動作確認
 
@@ -125,4 +125,4 @@ lint は TypeScript の型検査（`npm run typecheck`）で代えています�
 
 依存は `npm-shrinkwrap.json` で固定しています（`github:` から install するときにも効きます）。更新するときは `npm install` のあと `npm shrinkwrap` で作り直してください。
 
-PR を出す前に `npm run check-dist` が通ること（dist がソースと一致し、未コミットの dist が無いこと）を確認してください。CI でも検査します。リリースは `src/version.ts` と `package.json` の version を上げ、`v<version>` のタグを打ち、README の `#v...` を更新します。
+PR を出す前に `npm run check-dist` が通ること（dist がソースと一致し、未コミットの dist が無いこと）を確認してください。CI でも検査します。リリースは `src/version.ts` と `package.json` の version を上げ、`v<version>` のタグを打ち、README と Sphere の設定画面のコマンド例のコミット SHA を更新します。
