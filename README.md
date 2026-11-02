@@ -11,8 +11,7 @@ Sphere の設定画面で発行した個人用 API トークンで、自分の�
 
 - Node.js 22 以上（Node 20 は 2026-04 に EOL）。2026-10-21 のセキュリティリリース以降の版（22.23.4 以上、または 24.22.1 以上）を使ってください
 - Sphere の個人用 API トークン（`sph_` で始まる 47 文字）
-- Sphere の API の URL（管理者から案内されたもの。Web 版の設定値 `API_ENDPOINT_BASE_URL` と同じで、末尾の `/api` は付けても付けなくても構いません）
-- このリポジトリ（private）への読み取りアクセス。`npx github:` は GitHub の認証情報（`gh auth login` か SSH 鍵）で clone します。npm に公開した後は不要になります
+- Sphere の API の URL。設定 > 「API トークン」に表示される Claude Code の登録コマンドの `SPHERE_API_URL=` の値です（Web 版の設定値 `API_ENDPOINT_BASE_URL` と同じ。末尾の `/api` は付けても付けなくても構いません）
 
 ## セットアップ
 
@@ -86,9 +85,63 @@ Claude Code で次のように聞きます。
 | `add_reaction` / `remove_reaction` | 絵文字リアクションの追加・削除 | 送信 |
 
 - 読み取りで既読は付きません（未読数は変わりません）
-- API 経由で送信・編集したメッセージには、Sphere の画面で「API から送信」のラベルが付きます
 - メッセージは `{ id, sender, sent_at, content, ... }` の形で返り、本文は `content` に入ります。日時は日本時間（JST）です
 - `whoami` は毎回 Sphere に問い合わせるので、トークンを失効させるとその場でエラーになります
+
+## MCP を使わずに API を直接呼ぶ
+
+スクリプト（curl・Python など）から呼ぶときの仕様です。この MCP サーバーも同じ API を呼んでいます。
+
+- URL は `<SPHERE_API_URL>/api/token/...` です。トークンが使えるのはこのパスだけで、Web 版が使う他の `/api/...` に送ると認証エラーになります
+- `Authorization: Bearer <トークン>` と `Accept: application/json` を付けます
+- 応答は `{ "status": "...", "message": "...", "data": ... }` の形で、中身は `data` に入ります。エラーのときは `errors`（項目ごとのメッセージキーの配列）が付くことがあります。ただし 429 と、パスの形式が違うときの 404 は `{ "message": "..." }` だけです
+- 日時は日本時間（JST、`YYYY-MM-DD HH:MM:SS`）です。`GET /api/token/me` のトークンの日時だけは ISO 8601（`+09:00` 付き）です。読み取りで既読は付きません
+
+```bash
+# トークンはコマンドに直接書かず、read -rs SPHERE_API_TOKEN などで変数に入れる（シェルの履歴に残さないため）
+curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/json" \
+  "$SPHERE_API_URL/api/token/conversations"
+```
+
+| メソッドとパス | 内容 | 必要な権限 |
+|---|---|---|
+| `GET /api/token/me` | トークンの持ち主と権限（`can_write`・`include_dm`・有効期限） | 読み取り |
+| `GET /api/token/conversations` | 参加中の会話一覧（グループルームと DM、最新メッセージ順）。DM を含めないトークンでは DM は出ません | 読み取り |
+| `GET /api/token/conversations/{id}` | 会話の名前・概要・メンバー | 読み取り |
+| `GET /api/token/conversations/{id}/messages` | 最新 30 件を古い順（時系列）で返す。さかのぼり方は下記 | 読み取り |
+| `GET /api/token/conversations/{id}/messages/search?q=<検索語>` | 会話内の部分一致検索（新しい順に最大 100 件）。`q` は 255 文字まで。本文と、自分の表示言語への翻訳文に一致します。削除済みは出ず、結果に `edited_at` は含まれません。会話をまたいだ検索はありません。FREE プランの組織は直近 30 日分だけが対象です | 読み取り |
+| `POST /api/token/conversations/{id}/messages` | 送信。`{ "message_text": "...", "reply_message_id": 123 }`（返信先は省略可。本文は 5000 文字まで） | 送信 |
+| `PATCH /api/token/conversations/{id}/messages/{message_id}` | 自分のメッセージを編集。`{ "message_text": "..." }` | 送信 |
+| `DELETE /api/token/conversations/{id}/messages/{message_id}` | 自分のメッセージを削除 | 送信 |
+| `POST` / `DELETE /api/token/conversations/{id}/messages/{message_id}/reactions` | リアクションの追加・削除。`{ "selected_stamp": "👍" }` | 送信 |
+
+### メッセージの取得とさかのぼり方
+
+- クエリは `from_id`（この ID を基準にする）、`direction`（`<` で古い方向、`>` で新しい方向。`<=` / `>=` も可）、`loaded_by`（この日時より前を取得する。`from_id` を指定したときは無視される）です
+- 古い方へ読むには、返ってきたメッセージの最小の `id` を `from_id` に、`direction` に `<` を指定して呼び直します
+- グループルームでは、メッセージのほかにフィード行（`type` が `feed`、`id` は 0）が混ざります。読み飛ばしてください。フィード行しか返らなかったときは、その中で最も古い `created_at` を `loaded_by` に指定して続けます
+- メッセージの主な項目は `id`、`user_id`（送信者）、`user_name`、`message_text`、`created_at`、`edited_at`、`reply_message_id`、`quoted_text`、`sent_via`（0: アプリ、1: API トークン）です。`sub_type` が `deleted_message`、または `status` が 0 以外の行は削除済みです
+- `message_text` は HTML エスケープされた状態で返ります（`&amp;` `&lt;` `&#039;` など）。プレーンテキストとして使うときはデコードしてください
+
+### 利用回数の上限
+
+| 対象 | 上限 |
+|---|---|
+| 読み取り | トークンごとに 1 分 300 回 |
+| 送信・編集・削除・リアクション | ユーザーごとに 1 分 30 回 |
+| すべてのリクエスト（トークンの確認より前に数えるので、無効なトークンも含む） | IP アドレスごとに 1 分 600 回 |
+
+送信系のリクエストは読み取りの回数にも数えます。超えると HTTP 429 が返ります（`Retry-After` ヘッダに待つ秒数が入ります）。
+
+### 主なエラー
+
+| HTTP | 意味 |
+|---|---|
+| 401 | トークンが無効・期限切れ・失効済み |
+| 403 | 利用できない状態。理由は `errors.api_token` の値で分かります（`validation.forbidden.api_token_read_only`: 読み取り専用のトークンで送信した、`validation.forbidden.api_token_write_disabled_by_organization`: 組織が送信を止めている、`validation.forbidden.api_token_disabled_by_organization`: 組織がトークンの利用を止めている、`validation.forbidden.api_token_user_suspended`: アカウントが停止中） |
+| 404 | 参加していない会話、DM を含めないトークンでの DM、削除済み・他人のメッセージ |
+| 422 | パラメータの誤り |
+| 429 | 利用回数の上限 |
 
 ## 注意（セキュリティ）
 
