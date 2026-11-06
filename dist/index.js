@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { isCliInvocation, runCli } from "./cli.js";
 import { SphereApiClient, SphereApiError, describeApiError } from "./client.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { SERVER_INSTRUCTIONS, registerTools, toAccessInfo } from "./tools.js";
@@ -41,7 +42,21 @@ async function main() {
     await server.connect(new StdioServerTransport());
     log(`接続しました: ${config.baseUrl} / ${access.user.user_name} / トークン「${access.token.name}」（送信: ${access.canWrite ? "可" : "不可"}, DM: ${access.includeDm ? "含む" : "含まない"}）`);
 }
-main().catch((error) => {
-    log(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-});
+// 引数があれば CLI（search / messages / conversations / help）、なければ MCP サーバー。
+// bin は sphere-mcp 1 つのまま（npx が実行するものを決められなくなるため増やさない）
+const args = process.argv.slice(2);
+if (isCliInvocation(args)) {
+    runCli(args, {
+        env: process.env,
+        stdout: (text) => process.stdout.write(text),
+        stderr: (text) => process.stderr.write(text),
+    }).then((code) => {
+        process.exitCode = code;
+    });
+}
+else {
+    main().catch((error) => {
+        log(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+    });
+}

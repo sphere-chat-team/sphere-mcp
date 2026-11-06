@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { describeApiError, type MeResponse, type SphereApi } from "./client.js";
-import { CONTENT_NOTICE, formatConversation, formatConversationDetail, formatMessages, paging } from "./format.js";
+import { CONTENT_NOTICE, MESSAGE_FIELDS, formatConversation, formatConversationDetail, formatMessages, paging } from "./format.js";
 
 export interface AccessInfo {
   user: MeResponse["user"];
@@ -37,13 +37,20 @@ const conversationId = z
   .describe("会話の ID（list_conversations で取得）");
 const messageId = z.number().int().positive().describe("メッセージの ID");
 const messageText = z.string().min(1).max(5000).describe("本文（最大 5000 文字）");
+const fields = z
+  .array(z.enum(MESSAGE_FIELDS))
+  .optional()
+  .describe("返す項目を絞る（id は常に含む）。省略すると全項目。本文が不要なら content を外すと応答が小さくなる");
+const searchSince = z.string().optional().describe("この日時以降（YYYY-MM-DD または YYYY-MM-DD HH:MM:SS、JST）");
+const searchUntil = z.string().optional().describe("この日時以前（同じ形式。日付だけならその日の終わりまで含む）");
+const searchQuery = z.string().min(1).max(255).describe("検索語（部分一致）");
 const stamp = z.string().min(1).max(255).describe("リアクションの絵文字（例: 👍）");
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
 function ok(data: object, notice?: string): ToolResult {
   const payload = notice === undefined ? data : { notice, ...data };
-  return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
+  return { content: [{ type: "text", text: JSON.stringify(payload) }] };
 }
 
 function fail(error: unknown): ToolResult {
@@ -125,7 +132,7 @@ export function registerTools(server: McpServer, api: SphereApi, access: AccessI
     {
       title: "メッセージ取得",
       description: [
-        "会話の最新 30 件のメッセージを、古い順（時系列）で返します。配列の末尾が最新です。",
+        "会話の最新 30 件（limit で減らせる）のメッセージを、古い順（時系列）で返します。配列の末尾が最新です。",
         "さらに古いものを読むには、応答の paging.next_from_id を from_id に、direction に '<' を指定して呼び直します（messages が空で paging.next_loaded_by があるときは loaded_by にそれを指定します）。",
         `注意: ${CONTENT_NOTICE}`,
       ].join(" "),
@@ -134,13 +141,16 @@ export function registerTools(server: McpServer, api: SphereApi, access: AccessI
         from_id: messageId.optional().describe("この ID を基準に取得する（ページング用。paging.next_from_id を渡す）"),
         direction: z.enum(["<", ">", "<=", ">="]).optional().describe("from_id に対する方向。'<' で古い方向、'>' で新しい方向"),
         loaded_by: z.string().optional().describe("この日時（YYYY-MM-DD HH:MM:SS、JST）より前を取得する。from_id を指定したときは無視される"),
+        limit: z.number().int().min(1).max(30).optional().describe("取得する件数（1〜30、既定 30）。'<' や指定なしなら新しい方から、'>' なら古い方から数える"),
+        fields,
       },
       annotations: readOnly,
     },
-    async ({ conversation_id, from_id, direction, loaded_by }, extra) =>
+    async ({ conversation_id, from_id, direction, loaded_by, limit, fields }, extra) =>
       run(async () => {
-        const rows = await api.listMessages(conversation_id, { from_id, direction, loaded_by }, { signal: extra.signal });
-        return ok({ messages: formatMessages(rows), paging: paging(rows) }, CONTENT_NOTICE);
+        const rows = await api.listMessages(conversation_id, { from_id, direction, loaded_by, limit }, { signal: extra.signal });
+        // paging は絞り込み前の行から計算する
+        return ok({ messages: formatMessages(rows, fields), paging: paging(rows) }, CONTENT_NOTICE);
       }),
   );
 
@@ -148,17 +158,45 @@ export function registerTools(server: McpServer, api: SphereApi, access: AccessI
     "search_messages",
     {
       title: "メッセージ検索",
-      description: `会話内のメッセージを本文の部分一致で検索し、新しい順に最大 100 件返します。注意: ${CONTENT_NOTICE}`,
+      description: `会話内のメッセージを本文の部分一致で検索し、新しい順に返します（limit の既定と上限は 100 件）。期間は since / until で絞れます。注意: ${CONTENT_NOTICE}`,
       inputSchema: {
         conversation_id: conversationId,
-        q: z.string().min(1).max(255).describe("検索語（部分一致）"),
+        q: searchQuery,
+        since: searchSince,
+        until: searchUntil,
+        limit: z.number().int().min(1).max(100).optional().describe("返す件数（1〜100、既定 100）"),
+        fields,
       },
       annotations: readOnly,
     },
-    async ({ conversation_id, q }, extra) =>
+    async ({ conversation_id, q, since, until, limit, fields }, extra) =>
       run(async () => {
-        const rows = await api.searchMessages(conversation_id, q, { signal: extra.signal });
-        return ok({ messages: formatMessages(rows) }, CONTENT_NOTICE);
+        const rows = await api.searchMessages(conversation_id, q, { since, until, limit }, { signal: extra.signal });
+        return ok({ messages: formatMessages(rows, fields) }, CONTENT_NOTICE);
+      }),
+  );
+
+  server.registerTool(
+    "search_all_messages",
+    {
+      title: "全会話のメッセージ検索",
+      description: [
+        `参加している全会話をまたいで本文を部分一致で検索し、新しい順に返します（${dmNote}）。`,
+        "会話名と一致箇所の前後だけを返します。全文は list_messages で読んでください（conversation_id と message_id を使います）。",
+        `注意: ${CONTENT_NOTICE}`,
+      ].join(" "),
+      inputSchema: {
+        q: searchQuery,
+        since: searchSince,
+        until: searchUntil,
+        limit: z.number().int().min(1).max(100).optional().describe("返す件数（1〜100、既定 20）"),
+      },
+      annotations: readOnly,
+    },
+    async ({ q, since, until, limit }, extra) =>
+      run(async () => {
+        const results = await api.searchAllMessages(q, { since, until, limit }, { signal: extra.signal });
+        return ok({ results }, CONTENT_NOTICE);
       }),
   );
 

@@ -40,9 +40,9 @@ const fixtures: Record<string, { status: number; body: unknown }> = {
 };
 
 /** dist を子プロセスで起動して終了を待つ。spawnSync だと同一プロセスのスタブ HTTP サーバーが応答できないので非同期で待つ */
-function runDist(env: NodeJS.ProcessEnv): Promise<{ status: number | null; stdout: string; stderr: string }> {
+function runDist(env: NodeJS.ProcessEnv, args: string[] = []): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [DIST], { env: { PATH: process.env.PATH ?? "", ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [DIST, ...args], { env: { PATH: process.env.PATH ?? "", ...env }, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
@@ -93,6 +93,17 @@ describe("dist/index.js over stdio", () => {
     expect(badToken.stderr).not.toContain("SECRET");
   });
 
+  it("runs as a CLI when given a subcommand, without starting the MCP server", async () => {
+    const result = await runDist({ SPHERE_API_URL: baseUrl, SPHERE_API_TOKEN: TEST_TOKEN }, ["conversations", "--json"]);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout.trim())).toMatchObject({ id: CONVERSATION_ID, type: "group", name: "Team" });
+
+    const unknown = await runDist({ SPHERE_API_URL: baseUrl, SPHERE_API_TOKEN: TEST_TOKEN }, ["nope"]);
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain("不明なサブコマンド");
+    expect(unknown.stderr).not.toContain(TEST_TOKEN);
+  });
+
   it("exits when /me is rejected, and explains a wrong URL on 404", async () => {
     // 401: トークンが無効（末尾 /api 付きの URL でも origin に正規化される）
     const rejected = await runDist({ SPHERE_API_URL: `${baseUrl}/api`, SPHERE_API_TOKEN: REJECTED_TOKEN });
@@ -130,7 +141,7 @@ describe("dist/index.js over stdio", () => {
 
       const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
       // can_write=false なので送信系は出ない
-      expect(tools).toEqual(["get_conversation", "list_conversations", "list_messages", "search_messages", "whoami"]);
+      expect(tools).toEqual(["get_conversation", "list_conversations", "list_messages", "search_all_messages", "search_messages", "whoami"]);
 
       const result = await client.callTool({ name: "list_conversations", arguments: {} });
       const payload = JSON.parse((result.content as Array<{ text: string }>)[0].text);
