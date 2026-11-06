@@ -39,7 +39,7 @@ Sphere の設定 > 「API トークン」で発行します。
   [ -n "$SPHERE_API_TOKEN" ] && claude mcp add sphere \
     -e SPHERE_API_URL=https://<Sphere の API のホスト> \
     -e SPHERE_API_TOKEN="$SPHERE_API_TOKEN" \
-    -- npx -y --allow-git=root github:sphere-chat-team/sphere-mcp#6ea7c9bebe8f69b773b697123c8d1b9dde782c23
+    -- npx -y --allow-git=root github:sphere-chat-team/sphere-mcp#d8a7e000a08b56819c3100f0f3a6b1e93dfc3d8f
   unset SPHERE_API_TOKEN
 }
 ```
@@ -52,7 +52,7 @@ Sphere の設定 > 「API トークン」で発行します。
 
 登録後、Claude Code で `/mcp` を開き `sphere` が接続済みになっていれば完了です。接続時に `[sphere-mcp] 接続しました: <API の URL> / <ユーザー名> / トークン「<名前>」（送信: 可, DM: 含む）` と stderr に出ます。
 
-Claude Desktop など他の MCP クライアントでは、`command: npx`、`args: ["-y", "--allow-git=root", "github:sphere-chat-team/sphere-mcp#6ea7c9bebe8f69b773b697123c8d1b9dde782c23"]`、`env` に同じ 2 つを設定してください。
+Claude Desktop など他の MCP クライアントでは、`command: npx`、`args: ["-y", "--allow-git=root", "github:sphere-chat-team/sphere-mcp#d8a7e000a08b56819c3100f0f3a6b1e93dfc3d8f"]`、`env` に同じ 2 つを設定してください。
 
 ### 3. 動作確認
 
