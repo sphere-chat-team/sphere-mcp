@@ -162,7 +162,7 @@ curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/jso
 
 ### 追加パラメータ（すべて任意）
 
-- `GET /api/token/conversations/{id}/messages`: `limit`（1〜30。`direction` が `<` / `<=` / 指定なしのときは新しい方から `limit` 件、`>` / `>=` のときは古い方から `limit` 件。返る順序はどちらも古い順）、`unescape`（`1` で本文の HTML エスケープを戻して返す。戻した値はエスケープされていないので、HTML として出さない）、`fields`（返す項目の絞り込み。API を直接使う人向け）
+- `GET /api/token/conversations/{id}/messages`: `limit`（1〜30。メッセージの件数で数える。`direction` が `<` / `<=` / 指定なしのときは新しい方から `limit` 件、`>` / `>=` のときは古い方から `limit` 件。返る順序はどちらも古い順。フィード行は件数に数えず、残したメッセージより先のものだけを落とす）、`unescape`（`1` で本文の HTML エスケープを戻して返す。戻した値はエスケープされていないので、HTML として出さない）、`fields`（返す項目をカンマ区切りで絞り込む。API を直接使う人向け。`id` と `type` は常に返す）
 - `GET /api/token/conversations/{id}/messages/search`: `since` / `until`（`YYYY-MM-DD` または `YYYY-MM-DD HH:MM:SS`、JST。`until` が日付だけならその日の終わりまで含む）、`limit`（1〜100、既定 100）、`unescape`（上と同じ）、`fields`（上と同じ）
 - `GET /api/token/messages/search`: `q`（必須、1〜255 文字）、`since` / `until`（上と同じ）、`limit`（1〜100、既定 20）、`unescape`（上と同じ）。`data` は配列で、各要素は `conversation_id`、`conversation_type`（`group` / `dm`）、`conversation_name`、`message_id`、`user_id`、`user_name`、`sent_at`（JST）、`snippet`（一致箇所の前後だけの本文。切った側に `…` が付く）です
 - 新しいパラメータに未対応の古い API は、送っても無視するだけでエラーにはなりません。`/api/token/messages/search` は古い API では 404 です
@@ -174,6 +174,7 @@ curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/jso
 |---|---|
 | 読み取り | トークンごとに 1 分 300 回 |
 | 送信・編集・削除・リアクション | ユーザーごとに 1 分 30 回 |
+| 全会話の検索（`GET /api/token/messages/search`。読み取りの上限とは別に数える） | ユーザーごとに 1 分 10 回 |
 | すべてのリクエスト（トークンの確認より前に数えるので、無効なトークンも含む） | IP アドレスごとに 1 分 600 回 |
 
 送信系のリクエストは読み取りの回数にも数えます。超えると HTTP 429 が返ります（`Retry-After` ヘッダに待つ秒数が入ります）。
@@ -209,7 +210,7 @@ curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/jso
 | このトークンは読み取り専用で… | 「送信を許可する」を付けたトークンを発行 |
 | 組織の設定で API トークンの利用が無効化 / 送信が禁止 | 組織の管理者に確認 |
 | 会話またはメッセージが見つかりません | 自分がメンバーでない会話、DM を含めないトークンでの DM、削除済み・他人のメッセージ |
-| レート制限に達しました | 読み取り 300 回/分（トークン単位）、送信 30 回/分（ユーザー単位）。1 分待つ |
+| レート制限に達しました | 読み取り 300 回/分（トークン単位）、送信 30 回/分・全会話の検索 10 回/分（ユーザー単位）。1 分待つ |
 
 ## 開発
 
