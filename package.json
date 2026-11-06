@@ -1,6 +1,6 @@
 {
   "name": "@sphere-chat/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Sphere を Claude Code 等の MCP クライアントから使うためのローカル MCP サーバー（個人用 API トークンで /api/token/* を呼ぶ）",
   "type": "module",

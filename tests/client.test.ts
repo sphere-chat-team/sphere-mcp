@@ -43,12 +43,16 @@ describe("SphereApiClient", () => {
     const fetchImpl = vi.fn(async () => envelope([]));
     const client = clientWith(fetchImpl as unknown as typeof fetch);
 
-    await client.listMessages(CONVERSATION_ID, { from_id: 10, direction: "<" });
+    await client.listMessages(CONVERSATION_ID, { from_id: 10, direction: "<", limit: 5 });
     await client.searchMessages(CONVERSATION_ID, "deploy tomorrow");
+    await client.searchMessages(CONVERSATION_ID, "x", { since: "2026-10-01", until: "2026-10-31", limit: 7 });
+    await client.searchAllMessages("deploy", { since: "2026-10-01 09:00:00", limit: 20 });
 
     const urls = fetchImpl.mock.calls.map((call) => (call as unknown as [URL])[0].toString());
-    expect(urls[0]).toBe(`https://api.example.com/api/token/conversations/${CONVERSATION_ID}/messages?from_id=10&direction=%3C`);
-    expect(urls[1]).toBe(`https://api.example.com/api/token/conversations/${CONVERSATION_ID}/messages/search?q=deploy+tomorrow`);
+    expect(urls[0]).toBe(`https://api.example.com/api/token/conversations/${CONVERSATION_ID}/messages?from_id=10&direction=%3C&limit=5&unescape=1`);
+    expect(urls[1]).toBe(`https://api.example.com/api/token/conversations/${CONVERSATION_ID}/messages/search?q=deploy+tomorrow&unescape=1`);
+    expect(urls[2]).toBe(`https://api.example.com/api/token/conversations/${CONVERSATION_ID}/messages/search?q=x&since=2026-10-01&until=2026-10-31&limit=7&unescape=1`);
+    expect(urls[3]).toBe("https://api.example.com/api/token/messages/search?q=deploy&since=2026-10-01+09%3A00%3A00&limit=20&unescape=1");
   });
 
   it("posts JSON bodies, including the body of DELETE reactions", async () => {

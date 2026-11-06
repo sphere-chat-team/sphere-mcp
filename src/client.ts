@@ -88,6 +88,28 @@ export interface ListMessagesParams {
   from_id?: number;
   direction?: "<" | ">" | "<=" | ">=";
   loaded_by?: string;
+  /** 1〜30。'<' / '<=' / 指定なしは新しい方から、'>' / '>=' は古い方から limit 件（返る順序は古い順） */
+  limit?: number;
+}
+
+/** 会話内検索・全会話検索で共通の絞り込み。日時は YYYY-MM-DD または YYYY-MM-DD HH:MM:SS（JST） */
+export interface SearchParams {
+  since?: string;
+  until?: string;
+  /** 1〜100 */
+  limit?: number;
+}
+
+/** 全会話をまたぐ検索の 1 件。snippet は一致箇所の前後だけの本文（切った側に "…" が付く） */
+export interface ApiSearchHit {
+  conversation_id: string;
+  conversation_type: "group" | "dm";
+  conversation_name: string | null;
+  message_id: number;
+  user_id: string | null;
+  user_name: string | null;
+  sent_at: string;
+  snippet: string;
 }
 
 export interface SendMessageResult {
@@ -137,7 +159,8 @@ export interface SphereApi {
   listConversations(options?: RequestOptions): Promise<ApiConversation[]>;
   getConversation(conversationId: string, options?: RequestOptions): Promise<ApiConversationDetail>;
   listMessages(conversationId: string, params?: ListMessagesParams, options?: RequestOptions): Promise<ApiMessage[]>;
-  searchMessages(conversationId: string, q: string, options?: RequestOptions): Promise<ApiMessage[]>;
+  searchMessages(conversationId: string, q: string, params?: SearchParams, options?: RequestOptions): Promise<ApiMessage[]>;
+  searchAllMessages(q: string, params?: SearchParams, options?: RequestOptions): Promise<ApiSearchHit[]>;
   sendMessage(conversationId: string, body: { message_text: string; reply_message_id?: number }, options?: RequestOptions): Promise<SendMessageResult>;
   editMessage(conversationId: string, messageId: number, messageText: string, options?: RequestOptions): Promise<void>;
   deleteMessage(conversationId: string, messageId: number, options?: RequestOptions): Promise<void>;
@@ -180,11 +203,24 @@ export class SphereApiClient implements SphereApi {
     if (params.from_id !== undefined) query.from_id = String(params.from_id);
     if (params.direction !== undefined) query.direction = params.direction;
     if (params.loaded_by !== undefined) query.loaded_by = params.loaded_by;
+    if (params.limit !== undefined) query.limit = String(params.limit);
+    // 本文の HTML エスケープを戻して返してもらう（古い API は無視するだけ）
+    query.unescape = "1";
     return this.request<ApiMessage[]>("GET", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages`, { query }, options);
   }
 
-  searchMessages(conversationId: string, q: string, options?: RequestOptions): Promise<ApiMessage[]> {
-    return this.request<ApiMessage[]>("GET", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages/search`, { query: { q } }, options);
+  searchMessages(conversationId: string, q: string, params: SearchParams = {}, options?: RequestOptions): Promise<ApiMessage[]> {
+    return this.request<ApiMessage[]>(
+      "GET",
+      `/api/token/conversations/${encodeURIComponent(conversationId)}/messages/search`,
+      { query: searchQuery(q, params) },
+      options,
+    );
+  }
+
+  /** 古い API では 404（describeApiError の文言は会話向けなので、呼び出し側で必要なら補足する） */
+  searchAllMessages(q: string, params: SearchParams = {}, options?: RequestOptions): Promise<ApiSearchHit[]> {
+    return this.request<ApiSearchHit[]>("GET", "/api/token/messages/search", { query: searchQuery(q, params) }, options);
   }
 
   sendMessage(conversationId: string, body: { message_text: string; reply_message_id?: number }, options?: RequestOptions): Promise<SendMessageResult> {
@@ -275,6 +311,15 @@ export class SphereApiClient implements SphereApi {
 
     return envelope.data.data as T;
   }
+}
+
+function searchQuery(q: string, params: SearchParams): Record<string, string> {
+  const query: Record<string, string> = { q };
+  if (params.since !== undefined) query.since = params.since;
+  if (params.until !== undefined) query.until = params.until;
+  if (params.limit !== undefined) query.limit = String(params.limit);
+  query.unescape = "1";
+  return query;
 }
 
 /** undici の失敗は message が "fetch failed" 固定で、原因は cause に入る */

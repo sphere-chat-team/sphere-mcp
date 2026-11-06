@@ -35,6 +35,7 @@ function fakeApi(overrides: Partial<SphereApi> = {}): SphereApi {
     getConversation: vi.fn(async () => ({ id: CONVERSATION_ID, type: "group", name: "Team", overview: null, host_external_user_id: "h", created_at: null, members: [] })),
     listMessages: vi.fn(async () => []),
     searchMessages: vi.fn(async () => []),
+    searchAllMessages: vi.fn(async () => []),
     sendMessage: vi.fn(async () => ({ message_id: 42, message_text: "hi", user_language: "ja" })),
     editMessage: vi.fn(async () => undefined),
     deleteMessage: vi.fn(async () => undefined),
@@ -60,7 +61,7 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
 }
 
 const WRITE_TOOLS = ["add_reaction", "delete_message", "edit_message", "remove_reaction", "send_message"];
-const READ_TOOLS = ["get_conversation", "list_conversations", "list_messages", "search_messages", "whoami"];
+const READ_TOOLS = ["get_conversation", "list_conversations", "list_messages", "search_all_messages", "search_messages", "whoami"];
 
 describe("registerTools", () => {
   it("registers write tools only when the token can write", async () => {
@@ -86,7 +87,7 @@ describe("registerTools", () => {
 
     const result = await client.callTool({ name: "list_messages", arguments: { conversation_id: CONVERSATION_ID, from_id: 10, direction: "<" } });
 
-    expect(api.listMessages).toHaveBeenCalledWith(CONVERSATION_ID, { from_id: 10, direction: "<", loaded_by: undefined }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(api.listMessages).toHaveBeenCalledWith(CONVERSATION_ID, { from_id: 10, direction: "<", loaded_by: undefined, limit: undefined }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     const payload = JSON.parse(textOf(result));
     expect(payload.notice).toBe(CONTENT_NOTICE);
     expect(payload.messages).toHaveLength(2); // フィード行は含めない
@@ -131,7 +132,84 @@ describe("registerTools", () => {
     expect(detail.notice).toBe(CONTENT_NOTICE);
     expect(search.notice).toBe(CONTENT_NOTICE);
     expect(search.messages[0]).toMatchObject({ id: 3, sender: { id: "u2", name: "Hanako" }, content: "deploy" });
-    expect(api.searchMessages).toHaveBeenCalledWith(CONVERSATION_ID, "deploy", expect.anything());
+    expect(api.searchMessages).toHaveBeenCalledWith(CONVERSATION_ID, "deploy", { since: undefined, until: undefined, limit: undefined }, expect.anything());
+  });
+
+  it("narrows list_messages to the requested fields (id is always kept) and computes paging from the unfiltered rows", async () => {
+    const rows: ApiMessage[] = [
+      { id: 5, user_id: "u1", user_name: "Taro", message_text: "hello", created_at: "2026-10-21 10:00:00", type: "message" },
+      { id: 6, user_id: "u2", user_name: "Hanako", message_text: "world", created_at: "2026-10-21 10:00:01", type: "message" },
+    ];
+    const api = fakeApi({ listMessages: vi.fn(async () => rows) });
+    const client = await connect(api);
+
+    const payload = JSON.parse(textOf(await client.callTool({ name: "list_messages", arguments: { conversation_id: CONVERSATION_ID, limit: 2, fields: ["content"] } })));
+
+    expect(api.listMessages).toHaveBeenCalledWith(CONVERSATION_ID, expect.objectContaining({ limit: 2 }), expect.anything());
+    expect(payload.messages).toEqual([
+      { id: 5, content: "hello" },
+      { id: 6, content: "world" },
+    ]);
+    expect(payload.paging).toEqual({ next_from_id: 5, next_loaded_by: "2026-10-21 10:00:00" });
+    expect(payload.notice).toBe(CONTENT_NOTICE);
+  });
+
+  it("rejects out-of-range limits and unknown fields", async () => {
+    const api = fakeApi();
+    const client = await connect(api);
+
+    const tooMany = await client.callTool({ name: "list_messages", arguments: { conversation_id: CONVERSATION_ID, limit: 31 } });
+    const badField = await client.callTool({ name: "search_messages", arguments: { conversation_id: CONVERSATION_ID, q: "x", fields: ["password"] } });
+    const searchTooMany = await client.callTool({ name: "search_all_messages", arguments: { q: "x", limit: 101 } });
+
+    expect(tooMany.isError).toBe(true);
+    expect(badField.isError).toBe(true);
+    expect(searchTooMany.isError).toBe(true);
+    expect(api.listMessages).not.toHaveBeenCalled();
+    expect(api.searchMessages).not.toHaveBeenCalled();
+    expect(api.searchAllMessages).not.toHaveBeenCalled();
+  });
+
+  it("passes since, until, limit and fields to search_messages", async () => {
+    const api = fakeApi({ searchMessages: vi.fn(async () => [{ id: 3, user_id: "u2", user_name: "Hanako", message_text: "deploy", created_at: "2026-10-21 10:00:00" }]) });
+    const client = await connect(api);
+
+    const payload = JSON.parse(
+      textOf(await client.callTool({ name: "search_messages", arguments: { conversation_id: CONVERSATION_ID, q: "deploy", since: "2026-10-01", until: "2026-10-31", limit: 5, fields: ["sender", "sent_at"] } })),
+    );
+
+    expect(api.searchMessages).toHaveBeenCalledWith(CONVERSATION_ID, "deploy", { since: "2026-10-01", until: "2026-10-31", limit: 5 }, expect.anything());
+    expect(payload.messages).toEqual([{ id: 3, sender: { id: "u2", name: "Hanako" }, sent_at: "2026-10-21 10:00:00" }]);
+  });
+
+  it("search_all_messages returns the hits as results with the content notice", async () => {
+    const hit = {
+      conversation_id: CONVERSATION_ID,
+      conversation_type: "group" as const,
+      conversation_name: "Team",
+      message_id: 9,
+      user_id: "u2",
+      user_name: "Hanako",
+      sent_at: "2026-10-21 10:00:00",
+      snippet: "…deploy tomorrow…",
+    };
+    const api = fakeApi({ searchAllMessages: vi.fn(async () => [hit]) });
+    const client = await connect(api);
+
+    const result = await client.callTool({ name: "search_all_messages", arguments: { q: "deploy", since: "2026-10-01", limit: 10 } });
+    const payload = JSON.parse(textOf(result));
+
+    expect(api.searchAllMessages).toHaveBeenCalledWith("deploy", { since: "2026-10-01", until: undefined, limit: 10 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(payload).toEqual({ notice: CONTENT_NOTICE, results: [hit] });
+    // インデントなしの 1 行
+    expect(textOf(result)).not.toContain("\n");
+
+    const tool = (await client.listTools()).tools.find((t) => t.name === "search_all_messages");
+    expect(tool?.title).toBe("全会話のメッセージ検索");
+    expect(tool?.description).toContain("list_messages で読んでください");
+    expect(tool?.description).toContain("DM の両方");
+    expect(tool?.description).toContain(CONTENT_NOTICE);
+    expect(tool?.annotations?.readOnlyHint).toBe(true);
   });
 
   it("whoami asks Sphere every time so revocation is reflected", async () => {

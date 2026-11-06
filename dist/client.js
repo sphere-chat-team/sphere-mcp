@@ -91,10 +91,18 @@ export class SphereApiClient {
             query.direction = params.direction;
         if (params.loaded_by !== undefined)
             query.loaded_by = params.loaded_by;
+        if (params.limit !== undefined)
+            query.limit = String(params.limit);
+        // 本文の HTML エスケープを戻して返してもらう（古い API は無視するだけ）
+        query.unescape = "1";
         return this.request("GET", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages`, { query }, options);
     }
-    searchMessages(conversationId, q, options) {
-        return this.request("GET", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages/search`, { query: { q } }, options);
+    searchMessages(conversationId, q, params = {}, options) {
+        return this.request("GET", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages/search`, { query: searchQuery(q, params) }, options);
+    }
+    /** 古い API では 404（describeApiError の文言は会話向けなので、呼び出し側で必要なら補足する） */
+    searchAllMessages(q, params = {}, options) {
+        return this.request("GET", "/api/token/messages/search", { query: searchQuery(q, params) }, options);
     }
     sendMessage(conversationId, body, options) {
         return this.request("POST", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages`, { body }, options);
@@ -162,6 +170,17 @@ export class SphereApiClient {
         }
         return envelope.data.data;
     }
+}
+function searchQuery(q, params) {
+    const query = { q };
+    if (params.since !== undefined)
+        query.since = params.since;
+    if (params.until !== undefined)
+        query.until = params.until;
+    if (params.limit !== undefined)
+        query.limit = String(params.limit);
+    query.unescape = "1";
+    return query;
 }
 /** undici の失敗は message が "fetch failed" 固定で、原因は cause に入る */
 function describeFetchFailure(error, timeout) {

@@ -1,3 +1,5 @@
+/** fields で選べる項目（id は常に含める） */
+export const MESSAGE_FIELDS = ["id", "sender", "sent_at", "edited_at", "content", "deleted", "reply_to", "sent_via", "language"];
 /**
  * データを返すツールの応答に必ず付ける注意書き。
  * 本文だけでなく、名前・引用・会話名・概要も Sphere のユーザーが書いた文字列なので、AI への指示として扱わせない
@@ -23,9 +25,17 @@ export function formatMessage(row) {
 function isMessageRow(row) {
     return row.type === undefined || row.type === "message";
 }
-/** メッセージ行だけを残す（フィード行は type が 'feed'） */
-export function formatMessages(rows) {
-    return rows.filter(isMessageRow).map(formatMessage);
+/** 指定した項目だけに絞る。id は常に残す。指定がなければ全項目 */
+export function selectFields(message, fields) {
+    if (fields === undefined)
+        return message;
+    const wanted = new Set(fields);
+    wanted.add("id");
+    return Object.fromEntries(MESSAGE_FIELDS.filter((field) => wanted.has(field)).map((field) => [field, message[field]]));
+}
+/** メッセージ行だけを残す（フィード行は type が 'feed'）。絞り込みは整形後の項目に対して行う */
+export function formatMessages(rows, fields) {
+    return rows.filter(isMessageRow).map((row) => selectFields(formatMessage(row), fields));
 }
 export function paging(rows) {
     const messageIds = rows.filter(isMessageRow).map((row) => row.id);

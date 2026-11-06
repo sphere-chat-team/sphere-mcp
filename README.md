@@ -77,16 +77,51 @@ Claude Code で次のように聞きます。
 | `whoami` | トークンの持ち主と権限 | 読み取り |
 | `list_conversations` | 参加中の会話一覧（最新メッセージ順） | 読み取り |
 | `get_conversation` | 会話の名前・概要・メンバー | 読み取り |
-| `list_messages` | 最新 30 件を古い順（時系列）で返す。応答の `paging.next_from_id` を `from_id` に、`direction` に `<` を渡すと過去へさかのぼれる | 読み取り |
-| `search_messages` | 会話内のメッセージを部分一致で検索（最大 100 件） | 読み取り |
+| `list_messages` | 最新 30 件（`limit` で 1〜30 に減らせる）を古い順（時系列）で返す。応答の `paging.next_from_id` を `from_id` に、`direction` に `<` を渡すと過去へさかのぼれる | 読み取り |
+| `search_messages` | 会話内のメッセージを部分一致で検索（既定・最大 100 件、`limit` で減らせる）。`since` / `until` で期間を絞れる | 読み取り |
+| `search_all_messages` | 参加している全会話をまたいだ部分一致検索。会話名と一致箇所の前後（`snippet`）だけを返すので、全文は `list_messages` で読む。`q`・`since`・`until`・`limit`（1〜100、既定 20）を指定できる | 読み取り |
 | `send_message` | メッセージを投稿（返信も可） | 送信 |
 | `edit_message` | 自分のメッセージを編集 | 送信 |
 | `delete_message` | 自分のメッセージを削除 | 送信 |
 | `add_reaction` / `remove_reaction` | 絵文字リアクションの追加・削除 | 送信 |
 
 - 読み取りで既読は付きません（未読数は変わりません）
+- `since` / `until` は `YYYY-MM-DD` または `YYYY-MM-DD HH:MM:SS`（JST）です。`until` が日付だけなら、その日の終わりまで含みます
+- `list_messages` と `search_messages` の `fields` で返す項目を絞れます（`id`・`sender`・`sent_at`・`edited_at`・`content`・`deleted`・`reply_to`・`sent_via`・`language` から選びます。`id` は常に含みます。省略すると全項目）。本文が要らないときに外すと応答が小さくなります
+- `search_all_messages` の応答は `{ notice, results: [{ conversation_id, conversation_type, conversation_name, message_id, user_id, user_name, sent_at, snippet }] }` です。`snippet` は一致箇所の前後だけで、切った側に `…` が付きます
+- 本文は HTML エスケープを戻した状態（`&amp;` ではなく `&`）で返ります。応答の JSON は改行なしの 1 行です
 - メッセージは `{ id, sender, sent_at, content, ... }` の形で返り、本文は `content` に入ります。日時は日本時間（JST）です
 - `whoami` は毎回 Sphere に問い合わせるので、トークンを失効させるとその場でエラーになります
+
+## コマンドラインから使う
+
+MCP サーバーと同じ入口から、サブコマンドを付けて起動するとコマンドラインのツールとして動きます（引数なしなら今までどおり MCP サーバーです）。トークンと URL は MCP と同じ環境変数（`SPHERE_API_URL` / `SPHERE_API_TOKEN`）から読みます。
+
+```bash
+npx -y --allow-git=root github:sphere-chat-team/sphere-mcp#<コミット SHA> search "語" --since 2026-10-01
+```
+
+| サブコマンド | 内容 |
+|---|---|
+| `search <語> [--since 日付] [--until 日付] [--limit 件数] [--conversation <id>]` | 全会話を検索する。`--conversation` を付けるとその会話内だけを検索する（`--limit` は 1〜100） |
+| `messages <conversation_id> [--limit 件数] [--before <message_id>]` | 会話のメッセージを古い順に表示する（既定は最新から、`--limit` は 1〜30）。`--before` でその ID より前を取得する |
+| `conversations` | 参加している会話の一覧 |
+| `help` | 使い方 |
+
+- 出力は 1 行 1 件です。例: `2026-11-05 10:22:00  [会話名] 送信者: snippet  (conversation_id #message_id)`。本文の改行や制御文字は空白に置き換えます
+- `--json` を付けると 1 行 1 件の JSON（JSON Lines）で出力します
+- エラーは stderr に出て、終了コードは 1 です。トークンの値は出しません
+- 毎回 `npx` で取得すると重いので、シェルの alias や関数で短くしておくと便利です
+
+```bash
+# ~/.zshrc や ~/.bashrc に追記（<コミット SHA> は登録コマンドと同じものにする）
+sphere() {
+  npx -y --allow-git=root "github:sphere-chat-team/sphere-mcp#<コミット SHA>" "$@"
+}
+# 使い方: sphere search "語" --since 2026-10-01
+```
+
+トークンは環境変数として設定済みのシェルで使ってください（コマンドラインには書かないでください）。
 
 ## MCP を使わずに API を直接呼ぶ
 
@@ -108,8 +143,9 @@ curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/jso
 | `GET /api/token/me` | トークンの持ち主と権限（`can_write`・`include_dm`・有効期限） | 読み取り |
 | `GET /api/token/conversations` | 参加中の会話一覧（グループルームと DM、最新メッセージ順）。DM を含めないトークンでは DM は出ません | 読み取り |
 | `GET /api/token/conversations/{id}` | 会話の名前・概要・メンバー | 読み取り |
-| `GET /api/token/conversations/{id}/messages` | 最新 30 件を古い順（時系列）で返す。さかのぼり方は下記 | 読み取り |
-| `GET /api/token/conversations/{id}/messages/search?q=<検索語>` | 会話内の部分一致検索（新しい順に最大 100 件）。`q` は 255 文字まで。本文と、自分の表示言語への翻訳文に一致します。削除済みは出ず、結果に `edited_at` は含まれません。会話をまたいだ検索はありません。FREE プランの組織は直近 30 日分だけが対象です | 読み取り |
+| `GET /api/token/conversations/{id}/messages` | 最新 30 件を古い順（時系列）で返す。さかのぼり方・追加パラメータは下記 | 読み取り |
+| `GET /api/token/conversations/{id}/messages/search?q=<検索語>` | 会話内の部分一致検索（新しい順、既定・最大 100 件）。`q` は 255 文字まで。本文と、自分の表示言語への翻訳文に一致します。削除済みは出ず、結果に `edited_at` は含まれません。FREE プランの組織は直近 30 日分だけが対象です。追加パラメータは下記 | 読み取り |
+| `GET /api/token/messages/search?q=<検索語>` | 参加している全会話（DM を含めないトークンでは DM を除く）をまたいだ部分一致検索（新しい順）。追加パラメータは下記 | 読み取り |
 | `POST /api/token/conversations/{id}/messages` | 送信。`{ "message_text": "...", "reply_message_id": 123 }`（返信先は省略可。本文は 5000 文字まで） | 送信 |
 | `PATCH /api/token/conversations/{id}/messages/{message_id}` | 自分のメッセージを編集。`{ "message_text": "..." }` | 送信 |
 | `DELETE /api/token/conversations/{id}/messages/{message_id}` | 自分のメッセージを削除 | 送信 |
@@ -122,6 +158,14 @@ curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/jso
 - グループルームでは、メッセージのほかにフィード行（`type` が `feed`、`id` は 0）が混ざります。読み飛ばしてください。フィード行しか返らなかったときは、その中で最も古い `created_at` を `loaded_by` に指定して続けます
 - メッセージの主な項目は `id`、`user_id`（送信者）、`user_name`、`message_text`、`created_at`、`edited_at`、`reply_message_id`、`quoted_text`、`sent_via`（0: アプリ、1: API トークン）です。`sub_type` が `deleted_message`、または `status` が 0 以外の行は削除済みです
 - `message_text` は HTML エスケープされた状態で返ります（`&amp;` `&lt;` `&#039;` など）。プレーンテキストとして使うときはデコードしてください
+
+### 追加パラメータ（すべて任意）
+
+- `GET /api/token/conversations/{id}/messages`: `limit`（1〜30。`direction` が `<` / `<=` / 指定なしのときは新しい方から `limit` 件、`>` / `>=` のときは古い方から `limit` 件。返る順序はどちらも古い順）、`unescape`（`1` で本文の HTML エスケープを戻して返す）、`fields`（返す項目の絞り込み。API を直接使う人向け）
+- `GET /api/token/conversations/{id}/messages/search`: `since` / `until`（`YYYY-MM-DD` または `YYYY-MM-DD HH:MM:SS`、JST。`until` が日付だけならその日の終わりまで含む）、`limit`（1〜100、既定 100）、`unescape`（上と同じ）、`fields`（上と同じ）
+- `GET /api/token/messages/search`: `q`（必須、1〜255 文字）、`since` / `until`（上と同じ）、`limit`（1〜100、既定 20）、`unescape`（上と同じ）。`data` は配列で、各要素は `conversation_id`、`conversation_type`（`group` / `dm`）、`conversation_name`、`message_id`、`user_id`、`user_name`、`sent_at`（JST）、`snippet`（一致箇所の前後だけの本文。切った側に `…` が付く）です
+- 新しいパラメータに未対応の古い API は、送っても無視するだけでエラーにはなりません。`/api/token/messages/search` は古い API では 404 です
+- この MCP サーバーとコマンドラインのツールは、常に `unescape=1` を付けて呼びます
 
 ### 利用回数の上限
 
@@ -184,7 +228,8 @@ lint は TypeScript の型検査（`npm run typecheck`）で代えています�
 - `src/client.ts`: API クライアントとエラー文言
 - `src/tools.ts`: ツール定義。送信系はトークンに送信権限があるときだけ登録
 - `src/format.ts`: API の行をツール応答の形に整える
-- `src/index.ts`: 起動。`GET /api/token/me` でトークンを確認してから stdio で待ち受ける
+- `src/index.ts`: 起動。引数がなければ `GET /api/token/me` でトークンを確認してから stdio で待ち受ける（MCP サーバー）。引数があればコマンドラインのツールとして動く
+- `src/cli.ts`: コマンドラインのツール（`search` / `messages` / `conversations` / `help`）。`bin` は `sphere-mcp` 1 つのままにしています（2 つにすると npx が実行するものを決められず、登録済みのコマンドが壊れるため）
 
 依存は `npm-shrinkwrap.json` で固定しています（`github:` から install するときにも効きます）。更新するときは `npm install` のあと `npm shrinkwrap` で作り直してください。
 

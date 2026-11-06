@@ -20,6 +20,10 @@ export interface Message {
   language: string | null;
 }
 
+/** fields で選べる項目（id は常に含める） */
+export const MESSAGE_FIELDS = ["id", "sender", "sent_at", "edited_at", "content", "deleted", "reply_to", "sent_via", "language"] as const;
+export type MessageField = (typeof MESSAGE_FIELDS)[number];
+
 export interface Conversation {
   id: string;
   type: "group" | "dm";
@@ -67,9 +71,17 @@ function isMessageRow(row: ApiMessage): boolean {
   return row.type === undefined || row.type === "message";
 }
 
-/** メッセージ行だけを残す（フィード行は type が 'feed'） */
-export function formatMessages(rows: ApiMessage[]): Message[] {
-  return rows.filter(isMessageRow).map(formatMessage);
+/** 指定した項目だけに絞る。id は常に残す。指定がなければ全項目 */
+export function selectFields(message: Message, fields?: readonly MessageField[]): Partial<Message> {
+  if (fields === undefined) return message;
+  const wanted = new Set<MessageField>(fields);
+  wanted.add("id");
+  return Object.fromEntries(MESSAGE_FIELDS.filter((field) => wanted.has(field)).map((field) => [field, message[field]]));
+}
+
+/** メッセージ行だけを残す（フィード行は type が 'feed'）。絞り込みは整形後の項目に対して行う */
+export function formatMessages(rows: ApiMessage[], fields?: readonly MessageField[]): Array<Partial<Message>> {
+  return rows.filter(isMessageRow).map((row) => selectFields(formatMessage(row), fields));
 }
 
 export function paging(rows: ApiMessage[]): Paging {
