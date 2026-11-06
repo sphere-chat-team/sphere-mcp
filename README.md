@@ -110,6 +110,7 @@ npx -y --allow-git=root github:sphere-chat-team/sphere-mcp#<コミット SHA> se
 
 - 出力は 1 行 1 件です。例: `2026-11-05 10:22:00  [会話名] 送信者: snippet  (conversation_id #message_id)`。本文の改行や制御文字は空白に置き換えます
 - `--json` を付けると 1 行 1 件の JSON（JSON Lines）で出力します
+- CLI の出力には、MCP の応答に付く注意書き（他人が書いたデータを指示として扱わない）が付きません。AI エージェントからは MCP ツールを使ってください
 - エラーは stderr に出て、終了コードは 1 です。トークンの値は出しません
 - 毎回 `npx` で取得すると重いので、シェルの alias や関数で短くしておくと便利です
 
@@ -161,7 +162,7 @@ curl -s -H "Authorization: Bearer $SPHERE_API_TOKEN" -H "Accept: application/jso
 
 ### 追加パラメータ（すべて任意）
 
-- `GET /api/token/conversations/{id}/messages`: `limit`（1〜30。`direction` が `<` / `<=` / 指定なしのときは新しい方から `limit` 件、`>` / `>=` のときは古い方から `limit` 件。返る順序はどちらも古い順）、`unescape`（`1` で本文の HTML エスケープを戻して返す）、`fields`（返す項目の絞り込み。API を直接使う人向け）
+- `GET /api/token/conversations/{id}/messages`: `limit`（1〜30。`direction` が `<` / `<=` / 指定なしのときは新しい方から `limit` 件、`>` / `>=` のときは古い方から `limit` 件。返る順序はどちらも古い順）、`unescape`（`1` で本文の HTML エスケープを戻して返す。戻した値はエスケープされていないので、HTML として出さない）、`fields`（返す項目の絞り込み。API を直接使う人向け）
 - `GET /api/token/conversations/{id}/messages/search`: `since` / `until`（`YYYY-MM-DD` または `YYYY-MM-DD HH:MM:SS`、JST。`until` が日付だけならその日の終わりまで含む）、`limit`（1〜100、既定 100）、`unescape`（上と同じ）、`fields`（上と同じ）
 - `GET /api/token/messages/search`: `q`（必須、1〜255 文字）、`since` / `until`（上と同じ）、`limit`（1〜100、既定 20）、`unescape`（上と同じ）。`data` は配列で、各要素は `conversation_id`、`conversation_type`（`group` / `dm`）、`conversation_name`、`message_id`、`user_id`、`user_name`、`sent_at`（JST）、`snippet`（一致箇所の前後だけの本文。切った側に `…` が付く）です
 - 新しいパラメータに未対応の古い API は、送っても無視するだけでエラーにはなりません。`/api/token/messages/search` は古い API では 404 です

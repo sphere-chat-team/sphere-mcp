@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SphereApiError, type ApiMessage, type ApiSearchHit, type SphereApi } from "../src/client.js";
-import { isCliInvocation, oneLine, runCli } from "../src/cli.js";
+import { escapeJsonLine, isCliInvocation, oneLine, runCli } from "../src/cli.js";
 
 const CONVERSATION_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const TOKEN = "sph_" + "a".repeat(43);
@@ -52,6 +52,20 @@ describe("oneLine", () => {
     expect(oneLine("x\u001b[31mred")).toBe("x [31mred");
     expect(oneLine(null)).toBe("");
   });
+
+  it("replaces zero-width and bidirectional control characters", () => {
+    expect(oneLine("a\u200bb\u202ec\u2066d\ufeffe")).toBe("a b c d e");
+  });
+});
+
+describe("escapeJsonLine", () => {
+  it("escapes C1 controls and invisible characters while keeping the JSON equivalent", () => {
+    const original = { snippet: "a\u0085b\u202ec\u200bd\ufeffe" };
+    const line = escapeJsonLine(JSON.stringify(original));
+
+    expect(line).toBe('{"snippet":"a\\u0085b\\u202ec\\u200bd\\ufeffe"}');
+    expect(JSON.parse(line)).toEqual(original);
+  });
 });
 
 describe("runCli search", () => {
@@ -96,6 +110,32 @@ describe("runCli search", () => {
       expect(result.stderr).toContain("[sphere]");
     }
     expect(api.searchAllMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe("runCli conversation id validation", () => {
+  it("rejects a malformed conversation id for --conversation and messages", async () => {
+    const api = fakeApi();
+
+    for (const args of [["search", "a", "--conversation", ".."], ["messages", ".."], ["messages", "short"]]) {
+      const result = await cli(args, api);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("26 文字");
+    }
+    expect(api.searchMessages).not.toHaveBeenCalled();
+    expect(api.listMessages).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-numeric --before", async () => {
+    const result = await cli(["messages", CONVERSATION_ID, "--before", "abc"]);
+    expect(result.code).toBe(1);
+  });
+
+  it("escapes invisible characters in --json output", async () => {
+    const api = fakeApi({ searchAllMessages: vi.fn(async () => [{ ...hit, snippet: "a\u202eb" }]) });
+    const result = await cli(["search", "a", "--json"], api);
+    expect(result.stdout).toContain("\\u202e");
+    expect(result.stdout).not.toContain("\u202e");
   });
 });
 

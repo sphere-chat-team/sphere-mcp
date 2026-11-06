@@ -212,6 +212,11 @@ describe("registerTools", () => {
     expect(tool?.annotations?.readOnlyHint).toBe(true);
   });
 
+  it("lists the user-written fields of search_all_messages in the content notice", () => {
+    expect(CONTENT_NOTICE).toContain("snippet");
+    expect(CONTENT_NOTICE).toContain("conversation_name");
+  });
+
   it("whoami asks Sphere every time so revocation is reflected", async () => {
     const api = fakeApi({
       me: vi

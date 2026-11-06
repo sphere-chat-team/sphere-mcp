@@ -39,14 +39,35 @@ export interface CliIo {
 
 class UsageError extends Error {}
 
+/** MCP の conversation_id と同じ形式。`..` などで別のパスを叩かせない */
+const CONVERSATION_ID = /^[0-9A-Za-z]{26}$/;
+
+function requireConversationId(value: string, name: string): string {
+  if (!CONVERSATION_ID.test(value)) {
+    throw new UsageError(`${name} は 26 文字の会話 ID で指定してください（conversations で確認できます）。`);
+  }
+  return value;
+}
+
 /** 引数があれば CLI、なければ MCP サーバーとして起動する */
 export function isCliInvocation(args: readonly string[]): boolean {
   return args.length > 0;
 }
 
-/** 1 行に収める。改行・タブ・その他の制御文字（端末のエスケープシーケンスを含む）を空白にする */
+/** ゼロ幅・双方向制御文字（表示を偽装できる）。U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF */
+const INVISIBLE = "\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff";
+
+const CONTROL_RUN = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029${INVISIBLE}]+`, "g");
+const JSON_ESCAPE = new RegExp(`[\\u007f-\\u009f${INVISIBLE}]`, "g");
+
+/** JSON.stringify の出力のうち、端末で偽装に使える文字を \\uXXXX に置き換える（JSON としては等価） */
+export function escapeJsonLine(text: string): string {
+  return text.replace(JSON_ESCAPE, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+/** 1 行に収める。改行・タブ・その他の制御文字（端末のエスケープシーケンスを含む）と、ゼロ幅・双方向制御文字を空白にする */
 export function oneLine(text: string | null | undefined): string {
-  return (text ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").trim();
+  return (text ?? "").replace(CONTROL_RUN, " ").trim();
 }
 
 function parseLimit(raw: string | undefined, max: number): number | undefined {
@@ -86,7 +107,7 @@ function toMessages(rows: ApiMessage[]): Message[] {
 
 function emit(io: CliIo, json: boolean, items: Array<{ json: object; line: string }>): void {
   for (const item of items) {
-    io.stdout(`${json ? JSON.stringify(item.json) : item.line}\n`);
+    io.stdout(`${json ? escapeJsonLine(JSON.stringify(item.json)) : item.line}\n`);
   }
 }
 
@@ -153,7 +174,7 @@ async function dispatch(args: readonly string[], io: CliIo): Promise<void> {
       const params = { since: values.since, until: values.until, limit: parseLimit(values.limit, 100) };
 
       if (values.conversation !== undefined) {
-        const conversationId = values.conversation;
+        const conversationId = requireConversationId(values.conversation, "--conversation");
         const rows = await api.searchMessages(conversationId, q, params);
         emit(
           io,
@@ -170,7 +191,7 @@ async function dispatch(args: readonly string[], io: CliIo): Promise<void> {
       if (positionals.length !== 1) {
         throw new UsageError("messages には conversation_id を 1 つ指定してください。");
       }
-      const conversationId = positionals[0];
+      const conversationId = requireConversationId(positionals[0], "conversation_id");
       const before = values.before === undefined ? undefined : parsePositiveInt(values.before, "--before");
       const rows = await api.listMessages(conversationId, {
         limit: parseLimit(values.limit, 30),
