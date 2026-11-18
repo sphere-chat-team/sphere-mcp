@@ -118,6 +118,11 @@ export interface SendMessageResult {
   user_language: string | null;
 }
 
+export interface SaveDraftResult {
+  conversation_id: string;
+  updated_at: string;
+}
+
 export class SphereApiError extends Error {
   constructor(
     public readonly status: number,
@@ -162,6 +167,7 @@ export interface SphereApi {
   searchMessages(conversationId: string, q: string, params?: SearchParams, options?: RequestOptions): Promise<ApiMessage[]>;
   searchAllMessages(q: string, params?: SearchParams, options?: RequestOptions): Promise<ApiSearchHit[]>;
   sendMessage(conversationId: string, body: { message_text: string; reply_message_id?: number }, options?: RequestOptions): Promise<SendMessageResult>;
+  saveDraft(conversationId: string, messageText: string, options?: RequestOptions): Promise<SaveDraftResult>;
   editMessage(conversationId: string, messageId: number, messageText: string, options?: RequestOptions): Promise<void>;
   deleteMessage(conversationId: string, messageId: number, options?: RequestOptions): Promise<void>;
   addReaction(conversationId: string, messageId: number, stamp: string, options?: RequestOptions): Promise<void>;
@@ -227,6 +233,11 @@ export class SphereApiClient implements SphereApi {
     return this.request<SendMessageResult>("POST", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages`, { body }, options);
   }
 
+  /** 下書きの保存（送信はしない）。送信権限のないトークンでも使える */
+  saveDraft(conversationId: string, messageText: string, options?: RequestOptions): Promise<SaveDraftResult> {
+    return this.request<SaveDraftResult>("PUT", `/api/token/conversations/${encodeURIComponent(conversationId)}/draft`, { body: { message_text: messageText } }, options);
+  }
+
   async editMessage(conversationId: string, messageId: number, messageText: string, options?: RequestOptions): Promise<void> {
     await this.request("PATCH", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}`, { body: { message_text: messageText } }, options);
   }
@@ -249,7 +260,7 @@ export class SphereApiClient implements SphereApi {
   }
 
   private async request<T = unknown>(
-    method: "GET" | "POST" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     init: { query?: Record<string, string>; body?: unknown } = {},
     options: RequestOptions = {},
