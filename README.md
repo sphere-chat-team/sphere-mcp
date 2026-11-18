@@ -19,7 +19,7 @@ Sphere の設定画面で発行した個人用 API トークンで、自分の�
 
 Sphere の設定 > 「API トークン」で発行します。
 
-- **送信を許可する**: 普段は付けないことを勧めます（読み取り専用になり、送信・編集・削除・リアクションのツールが出ません）。AI に投稿させたいときだけ、送信可のトークンを別に発行してください
+- **送信を許可する**: 普段は付けないことを勧めます（読み取り専用になり、送信・編集・削除・リアクションのツールが出ません。下書きの `create_draft` は送信しないので使えます）。AI に投稿させたいときだけ、送信可のトークンを別に発行してください
 - **DM を含める**: AI に DM を読ませる必要がなければ外してください
 - 有効期限: 30 日を勧めます。期限が切れたら発行し直します
 - 平文は発行直後の 1 回しか表示されません。コピーしておいてください
@@ -68,7 +68,7 @@ Claude Code で次のように聞きます。
 |---|---|
 | `SPHERE_API_URL` | Sphere の API の URL（スキームとホスト。末尾の `/api` は任意。https 必須。`http://localhost:8000` など localhost だけ http 可） |
 | `SPHERE_API_TOKEN` | 個人用 API トークン |
-| `SPHERE_MCP_READ_ONLY` | `1` にすると、トークンに送信権限があっても送信系ツールを出さない |
+| `SPHERE_MCP_READ_ONLY` | `1` にすると、トークンに送信権限があっても送信系ツールを出さない（下書きの `create_draft` は出る） |
 
 ## ツール
 
@@ -80,6 +80,7 @@ Claude Code で次のように聞きます。
 | `list_messages` | 最新 30 件（`limit` で 1〜30 に減らせる）を古い順（時系列）で返す。応答の `paging.next_from_id` を `from_id` に、`direction` に `<` を渡すと過去へさかのぼれる | 読み取り |
 | `search_messages` | 会話内のメッセージを部分一致で検索（既定・最大 100 件、`limit` で減らせる）。`since` / `until` で期間を絞れる | 読み取り |
 | `search_all_messages` | 参加している全会話をまたいだ部分一致検索。会話名と一致箇所の前後（`snippet`）だけを返すので、全文は `list_messages` で読む。`q`・`since`・`until`・`limit`（1〜100、既定 20）を指定できる | 読み取り |
+| `create_draft` | 会話の下書きを保存する。送信はされず、ユーザーが Sphere アプリで開いた会話の入力欄に反映され、確認して自分で送る。同じ会話の未取り込みの下書きは上書き。`conversation_id`・`message_text`（最大 5000 文字）を指定し、`{ conversation_id, updated_at }` を返す | 読み取り |
 | `send_message` | メッセージを投稿（返信も可） | 送信 |
 | `edit_message` | 自分のメッセージを編集 | 送信 |
 | `delete_message` | 自分のメッセージを削除 | 送信 |
@@ -228,7 +229,7 @@ lint は TypeScript の型検査（`npm run typecheck`）で代えています�
 
 - `src/config.ts`: 環境変数の検証（トークンの形式、https の強制）
 - `src/client.ts`: API クライアントとエラー文言
-- `src/tools.ts`: ツール定義。送信系はトークンに送信権限があるときだけ登録
+- `src/tools.ts`: ツール定義。送信系はトークンに送信権限があるときだけ登録（下書きの `create_draft` は常に登録）
 - `src/format.ts`: API の行をツール応答の形に整える
 - `src/index.ts`: 起動。引数がなければ `GET /api/token/me` でトークンを確認してから stdio で待ち受ける（MCP サーバー）。引数があればコマンドラインのツールとして動く
 - `src/cli.ts`: コマンドラインのツール（`search` / `messages` / `conversations` / `help`）。`bin` は `sphere-mcp` 1 つのままにしています（2 つにすると npx が実行するものを決められず、登録済みのコマンドが壊れるため）

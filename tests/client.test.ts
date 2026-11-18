@@ -74,6 +74,19 @@ describe("SphereApiClient", () => {
     expect(JSON.parse(del.body as string)).toEqual({ selected_stamp: "👍" });
   });
 
+  it("saves a draft with PUT to the draft path", async () => {
+    const fetchImpl = vi.fn(async () => envelope({ conversation_id: CONVERSATION_ID, updated_at: "2026-11-18T10:00:00+09:00" }));
+    const client = clientWith(fetchImpl as unknown as typeof fetch);
+
+    const result = await client.saveDraft(CONVERSATION_ID, "draft\ntext");
+
+    expect(result).toEqual({ conversation_id: CONVERSATION_ID, updated_at: "2026-11-18T10:00:00+09:00" });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(url.pathname).toBe(`/api/token/conversations/${CONVERSATION_ID}/draft`);
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body as string)).toEqual({ message_text: "draft\ntext" });
+  });
+
   it("throws SphereApiError with the status and errors on non-2xx", async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(403, { status: "FORBIDDEN", message: "Forbidden", data: [], errors: { api_token: ["validation.forbidden.api_token_read_only"] } }),

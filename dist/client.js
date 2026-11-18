@@ -107,6 +107,10 @@ export class SphereApiClient {
     sendMessage(conversationId, body, options) {
         return this.request("POST", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages`, { body }, options);
     }
+    /** 下書きの保存（送信はしない）。送信権限のないトークンでも使える */
+    saveDraft(conversationId, messageText, options) {
+        return this.request("PUT", `/api/token/conversations/${encodeURIComponent(conversationId)}/draft`, { body: { message_text: messageText } }, options);
+    }
     async editMessage(conversationId, messageId, messageText, options) {
         await this.request("PATCH", `/api/token/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}`, { body: { message_text: messageText } }, options);
     }

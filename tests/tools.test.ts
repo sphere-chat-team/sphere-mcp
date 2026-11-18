@@ -37,6 +37,7 @@ function fakeApi(overrides: Partial<SphereApi> = {}): SphereApi {
     searchMessages: vi.fn(async () => []),
     searchAllMessages: vi.fn(async () => []),
     sendMessage: vi.fn(async () => ({ message_id: 42, message_text: "hi", user_language: "ja" })),
+    saveDraft: vi.fn(async (conversationId: string) => ({ conversation_id: conversationId, updated_at: "2026-11-18T10:00:00+09:00" })),
     editMessage: vi.fn(async () => undefined),
     deleteMessage: vi.fn(async () => undefined),
     addReaction: vi.fn(async () => undefined),
@@ -61,7 +62,7 @@ function textOf(result: Awaited<ReturnType<Client["callTool"]>>): string {
 }
 
 const WRITE_TOOLS = ["add_reaction", "delete_message", "edit_message", "remove_reaction", "send_message"];
-const READ_TOOLS = ["get_conversation", "list_conversations", "list_messages", "search_all_messages", "search_messages", "whoami"];
+const READ_TOOLS = ["create_draft", "get_conversation", "list_conversations", "list_messages", "search_all_messages", "search_messages", "whoami"];
 
 describe("registerTools", () => {
   it("registers write tools only when the token can write", async () => {
@@ -290,6 +291,29 @@ describe("registerTools", () => {
     const removed = JSON.parse(textOf(await client.callTool({ name: "remove_reaction", arguments: { conversation_id: CONVERSATION_ID, message_id: 5, stamp: "👍" } })));
     expect(api.removeReaction).toHaveBeenCalledWith(CONVERSATION_ID, 5, "👍", expect.anything());
     expect(removed).toEqual({ message_id: 5, stamp: "👍", removed: true });
+  });
+
+  it("saves a draft without sending, even for read-only tokens", async () => {
+    const api = fakeApi();
+    const client = await connect(api, me({ can_write: false }));
+
+    const tool = (await client.listTools()).tools.find((t) => t.name === "create_draft");
+    expect(tool?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
+
+    const result = await client.callTool({ name: "create_draft", arguments: { conversation_id: CONVERSATION_ID, message_text: "line1\nline2" } });
+
+    expect(api.saveDraft).toHaveBeenCalledWith(CONVERSATION_ID, "line1\nline2", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(JSON.parse(textOf(result))).toEqual({ conversation_id: CONVERSATION_ID, updated_at: "2026-11-18T10:00:00+09:00" });
+  });
+
+  it("rejects an empty or over-long draft before calling the API", async () => {
+    const api = fakeApi();
+    const client = await connect(api);
+
+    expect((await client.callTool({ name: "create_draft", arguments: { conversation_id: CONVERSATION_ID, message_text: "" } })).isError).toBe(true);
+    expect((await client.callTool({ name: "create_draft", arguments: { conversation_id: CONVERSATION_ID, message_text: "a".repeat(5001) } })).isError).toBe(true);
+    expect(api.saveDraft).not.toHaveBeenCalled();
   });
 
   it("describes DM availability from the token in list_conversations", async () => {

@@ -140,8 +140,8 @@ describe("dist/index.js over stdio", () => {
       await client.connect(transport);
 
       const tools = (await client.listTools()).tools.map((tool) => tool.name).sort();
-      // can_write=false なので送信系は出ない
-      expect(tools).toEqual(["get_conversation", "list_conversations", "list_messages", "search_all_messages", "search_messages", "whoami"]);
+      // can_write=false なので送信系は出ない（下書きの create_draft は出る）
+      expect(tools).toEqual(["create_draft", "get_conversation", "list_conversations", "list_messages", "search_all_messages", "search_messages", "whoami"]);
 
       const result = await client.callTool({ name: "list_conversations", arguments: {} });
       const payload = JSON.parse((result.content as Array<{ text: string }>)[0].text);
